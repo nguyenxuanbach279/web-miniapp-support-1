@@ -30,7 +30,7 @@ export const UserApproval: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<'All' | UserStatus>('Pending');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
-  if (currentUser?.role !== 'admin') {
+  if (currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin') {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center bg-slate-900/60 border border-slate-800 rounded-3xl">
         <div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-2xl flex items-center justify-center mb-4">
