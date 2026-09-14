@@ -61,7 +61,7 @@ export const MemberManagement: React.FC = () => {
   const filteredUsers = users.filter(u => {
     const matchesSearch =
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase());
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'All' || u.status === statusFilter;
     const matchesRole = roleFilter === 'All' || u.role === roleFilter;

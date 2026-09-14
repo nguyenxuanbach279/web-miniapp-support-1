@@ -11,7 +11,7 @@ export async function POST(request: Request) {
 
     const db = await readDB();
     const formattedEmail = email.trim().toLowerCase();
-    const foundUser = db.users.find(u => u.email.toLowerCase() === formattedEmail);
+    const foundUser = db.users.find(u => u.email?.toLowerCase() === formattedEmail);
 
     if (!foundUser) {
       return NextResponse.json({ success: false, message: 'Email này chưa được đăng ký tài khoản!' }, { status: 404 });

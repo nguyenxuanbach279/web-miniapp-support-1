@@ -190,16 +190,27 @@ export async function readDB(): Promise<DBData> {
   }
 
   let modified = false;
-  if (!db.users.some(u => u.email.toLowerCase() === 'nguyenxuanbach270901@gmail.com')) {
+
+  // Ensure admin users exist in users array
+  if (!db.users.some(u => u.email?.toLowerCase() === 'nguyenxuanbach270901@gmail.com')) {
     db.users.unshift(DEFAULT_DB.users[1]);
+    modified = true;
+  }
+  if (!db.users.some(u => u.email?.toLowerCase() === 'nguyenxuanbach27092001@gmail.com')) {
+    db.users.unshift(DEFAULT_DB.users[0]);
+    modified = true;
+  }
+
+  // Always ensure admin passwords are set (may be missing after DB migration)
+  if (!db.passwords['nguyenxuanbach270901@gmail.com']) {
     db.passwords['nguyenxuanbach270901@gmail.com'] = 'Bach270901@';
     modified = true;
   }
-  if (!db.users.some(u => u.email.toLowerCase() === 'nguyenxuanbach27092001@gmail.com')) {
-    db.users.unshift(DEFAULT_DB.users[0]);
+  if (!db.passwords['nguyenxuanbach27092001@gmail.com']) {
     db.passwords['nguyenxuanbach27092001@gmail.com'] = 'Bach270901@';
     modified = true;
   }
+
   if (modified) {
     await writeDB(db);
   }

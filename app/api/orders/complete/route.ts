@@ -35,7 +35,7 @@ export async function POST(request: Request) {
       }
 
       const userDb = await readDB();
-      const user = userDb.users.find(u => u.email.toLowerCase() === email);
+      const user = userDb.users.find(u => u.email?.toLowerCase() === email);
       const expectedPass = user ? (userDb.passwords[user.email] || userDb.passwords[email]) : null;
 
       if (!user || user.status !== 'Active' || (user.role !== 'admin' && user.role !== 'super_admin') || password !== expectedPass) {

@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const db = await readDB();
     const formattedEmail = email.trim().toLowerCase();
 
-    if (db.users.some(u => u.email.toLowerCase() === formattedEmail)) {
+    if (db.users.some(u => u.email?.toLowerCase() === formattedEmail)) {
       return NextResponse.json({ success: false, message: 'Email này đã tồn tại trong hệ thống!' }, { status: 409 });
     }
 

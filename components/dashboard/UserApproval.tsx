@@ -50,7 +50,7 @@ export const UserApproval: React.FC = () => {
   const filteredUsers = users.filter(u => {
     const matchesSearch =
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchTerm.toLowerCase());
+      u.email?.toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = statusFilter === 'All' || u.status === statusFilter;
     return matchesSearch && matchesStatus;
