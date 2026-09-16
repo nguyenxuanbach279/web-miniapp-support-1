@@ -31,6 +31,21 @@ const SSO_DB_PATH = path.join(process.cwd(), 'data', 'sso.json');
 const NOTIF_DB_PATH = path.join(process.cwd(), 'data', 'notifications.json');
 const INSTALL_LINKS_DB_PATH = path.join(process.cwd(), 'data', 'install_links.json');
 
+/**
+ * Helper to save local JSON file backup.
+ * Completely skips file system calls when running on Vercel Serverless (read-only filesystem).
+ */
+async function saveLocalFileBackup(filePath: string, data: unknown): Promise<void> {
+  if (process.env.VERCEL) return;
+  try {
+    const dir = path.dirname(filePath);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  } catch (err) {
+    // Ignore local fs errors
+  }
+}
+
 // --- SUPABASE CLIENT ---
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
@@ -184,7 +199,7 @@ export async function readDB(): Promise<DBData> {
     }
   }
 
-  // Ensure passwords object exists (may be missing if data came from external source)
+  // Ensure passwords object exists
   if (!db.passwords || typeof db.passwords !== 'object') {
     db.passwords = {};
   }
@@ -201,7 +216,7 @@ export async function readDB(): Promise<DBData> {
     modified = true;
   }
 
-  // Always ensure admin passwords are set (may be missing after DB migration)
+  // Always ensure admin passwords are set
   if (!db.passwords['nguyenxuanbach270901@gmail.com']) {
     db.passwords['nguyenxuanbach270901@gmail.com'] = 'Bach270901@';
     modified = true;
@@ -219,24 +234,19 @@ export async function readDB(): Promise<DBData> {
 }
 
 export async function writeDB(data: DBData): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
   if (supabase) {
-    await setSupabaseData('app_users', data);
+    tasks.push(setSupabaseData('app_users', data));
   }
   if (redis) {
-    try {
-      await redis.set('app_users', data);
-    } catch (err) {
-      console.error('Error writing to Redis (users):', err);
-    }
+    tasks.push(
+      redis.set('app_users', data).catch(err => {
+        console.error('Error writing to Redis (users):', err);
+      })
+    );
   }
-
-  const dir = path.dirname(DB_PATH);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    // Ignore read-only fs error on Vercel
-  }
+  tasks.push(saveLocalFileBackup(DB_PATH, data));
+  await Promise.all(tasks);
 }
 
 // --- ORDERS DB ---
@@ -267,58 +277,27 @@ export async function readOrdersDB(): Promise<OrdersDBData> {
     }
   }
 
-  // Auto cleanup phone&role orders that are Done and older than 24 hours (1 day)
-  const now = Date.now();
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  let modified = false;
-
-  // Clean up initial mock order if present
-  if (db && Array.isArray(db.orders) && db.orders.some(o => o.id === 'ord_1770690000000')) {
+  if (db && Array.isArray(db.orders)) {
     db.orders = db.orders.filter(o => o.id !== 'ord_1770690000000');
-    modified = true;
-  }
-
-  const remainingOrders = db.orders.filter(order => {
-    const isPhoneRole = (order.type || 'phone&role') === 'phone&role';
-    const isDone = order.status === 'Done';
-
-    if (isPhoneRole && isDone && order.completedAt) {
-      const completedMs = new Date(order.completedAt).getTime();
-      if (!isNaN(completedMs) && (now - completedMs >= ONE_DAY_MS)) {
-        modified = true;
-        return false;
-      }
-    }
-    return true;
-  });
-
-  if (modified) {
-    db.orders = remainingOrders;
-    await writeOrdersDB(db);
   }
 
   return db;
 }
 
 export async function writeOrdersDB(data: OrdersDBData): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
   if (supabase) {
-    await setSupabaseData('app_orders', data);
+    tasks.push(setSupabaseData('app_orders', data));
   }
   if (redis) {
-    try {
-      await redis.set('app_orders', data);
-    } catch (err) {
-      console.error('Error writing to Redis (orders):', err);
-    }
+    tasks.push(
+      redis.set('app_orders', data).catch(err => {
+        console.error('Error writing to Redis (orders):', err);
+      })
+    );
   }
-
-  const dir = path.dirname(ORDERS_DB_PATH);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(ORDERS_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    // Ignore read-only fs error on Vercel
-  }
+  tasks.push(saveLocalFileBackup(ORDERS_DB_PATH, data));
+  await Promise.all(tasks);
 }
 
 // --- SSO DB ---
@@ -353,24 +332,19 @@ export async function readSSODB(): Promise<SSODBData> {
 }
 
 export async function writeSSODB(data: SSODBData): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
   if (supabase) {
-    await setSupabaseData('app_sso', data);
+    tasks.push(setSupabaseData('app_sso', data));
   }
   if (redis) {
-    try {
-      await redis.set('app_sso', data);
-    } catch (err) {
-      console.error('Error writing to Redis (sso):', err);
-    }
+    tasks.push(
+      redis.set('app_sso', data).catch(err => {
+        console.error('Error writing to Redis (sso):', err);
+      })
+    );
   }
-
-  const dir = path.dirname(SSO_DB_PATH);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(SSO_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    // Ignore read-only fs error on Vercel
-  }
+  tasks.push(saveLocalFileBackup(SSO_DB_PATH, data));
+  await Promise.all(tasks);
 }
 
 // --- NOTIFICATIONS DB ---
@@ -401,54 +375,23 @@ export async function readNotificationsDB(): Promise<NotificationsDBData> {
     }
   }
 
-  // Auto-delete notifications older than 7 days (1 week)
-  const now = Date.now();
-  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-  const originalCount = db.notifications.length;
-
-  db.notifications = db.notifications.filter(n => {
-    let createdMs = 0;
-    if (n.id && n.id.startsWith('notif_')) {
-      const parts = n.id.split('_');
-      if (parts[1]) {
-        const ts = parseInt(parts[1], 10);
-        if (!isNaN(ts) && ts > 1600000000000) createdMs = ts;
-      }
-    }
-    if (!createdMs && n.createdAt) {
-      const parsed = new Date(n.createdAt).getTime();
-      if (!isNaN(parsed)) createdMs = parsed;
-    }
-    if (createdMs > 0 && (now - createdMs >= ONE_WEEK_MS)) return false;
-    return true;
-  });
-
-  if (db.notifications.length !== originalCount) {
-    await writeNotificationsDB(db);
-  }
-
   return db;
 }
 
 export async function writeNotificationsDB(data: NotificationsDBData): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
   if (supabase) {
-    await setSupabaseData('app_notifications', data);
+    tasks.push(setSupabaseData('app_notifications', data));
   }
   if (redis) {
-    try {
-      await redis.set('app_notifications', data);
-    } catch (err) {
-      console.error('Error writing to Redis (notifications):', err);
-    }
+    tasks.push(
+      redis.set('app_notifications', data).catch(err => {
+        console.error('Error writing to Redis (notifications):', err);
+      })
+    );
   }
-
-  const dir = path.dirname(NOTIF_DB_PATH);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(NOTIF_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    // Ignore read-only fs error on Vercel
-  }
+  tasks.push(saveLocalFileBackup(NOTIF_DB_PATH, data));
+  await Promise.all(tasks);
 }
 
 // --- INSTALL LINKS DB ---
@@ -483,22 +426,71 @@ export async function readInstallLinksDB(): Promise<InstallLinksDBData> {
 }
 
 export async function writeInstallLinksDB(data: InstallLinksDBData): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
   if (supabase) {
-    await setSupabaseData('app_install_links', data);
+    tasks.push(setSupabaseData('app_install_links', data));
   }
   if (redis) {
-    try {
-      await redis.set('app_install_links', data);
-    } catch (err) {
-      console.error('Error writing to Redis (install_links):', err);
+    tasks.push(
+      redis.set('app_install_links', data).catch(err => {
+        console.error('Error writing to Redis (install_links):', err);
+      })
+    );
+  }
+  tasks.push(saveLocalFileBackup(INSTALL_LINKS_DB_PATH, data));
+  await Promise.all(tasks);
+}
+
+// --- DEDICATED CLEANUP FUNCTION FOR CRON ---
+export async function cleanupOldData(): Promise<{ deletedOrdersCount: number; deletedNotifsCount: number }> {
+  const now = Date.now();
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+  // 1. Cleanup old orders
+  const ordersDb = await readOrdersDB();
+  const initialOrdersCount = ordersDb.orders.length;
+  ordersDb.orders = ordersDb.orders.filter(order => {
+    // Remove mock order if still present
+    if (order.id === 'ord_1770690000000') return false;
+    const isPhoneRole = (order.type || 'phone&role') === 'phone&role';
+    const isDone = order.status === 'Done';
+    if (isPhoneRole && isDone && order.completedAt) {
+      const completedMs = new Date(order.completedAt).getTime();
+      if (!isNaN(completedMs) && (now - completedMs >= ONE_DAY_MS)) {
+        return false;
+      }
     }
+    return true;
+  });
+  const deletedOrdersCount = initialOrdersCount - ordersDb.orders.length;
+  if (deletedOrdersCount > 0) {
+    await writeOrdersDB(ordersDb);
   }
 
-  const dir = path.dirname(INSTALL_LINKS_DB_PATH);
-  try {
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(INSTALL_LINKS_DB_PATH, JSON.stringify(data, null, 2), 'utf-8');
-  } catch (err) {
-    // Ignore read-only fs error on Vercel
+  // 2. Cleanup old notifications
+  const notifsDb = await readNotificationsDB();
+  const initialNotifsCount = notifsDb.notifications.length;
+  notifsDb.notifications = notifsDb.notifications.filter(n => {
+    let createdMs = 0;
+    if (n.id && n.id.startsWith('notif_')) {
+      const parts = n.id.split('_');
+      if (parts[1]) {
+        const ts = parseInt(parts[1], 10);
+        if (!isNaN(ts) && ts > 1600000000000) createdMs = ts;
+      }
+    }
+    if (!createdMs && n.createdAt) {
+      const parsed = new Date(n.createdAt).getTime();
+      if (!isNaN(parsed)) createdMs = parsed;
+    }
+    if (createdMs > 0 && (now - createdMs >= ONE_WEEK_MS)) return false;
+    return true;
+  });
+  const deletedNotifsCount = initialNotifsCount - notifsDb.notifications.length;
+  if (deletedNotifsCount > 0) {
+    await writeNotificationsDB(notifsDb);
   }
+
+  return { deletedOrdersCount, deletedNotifsCount };
 }

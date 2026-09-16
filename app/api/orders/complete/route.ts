@@ -66,8 +66,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const ordersDb = await readOrdersDB();
-    const notifsDb = await readNotificationsDB();
+    const [ordersDb, notifsDb] = await Promise.all([
+      readOrdersDB(),
+      readNotificationsDB()
+    ]);
 
     const nowIso = new Date().toISOString();
     const nowUtc7 = getUTC7Timestamp();
@@ -118,8 +120,10 @@ export async function POST(request: Request) {
     }
 
     if (completedOrders.length > 0 || deletedCount > 0) {
-      await writeOrdersDB(ordersDb);
-      await writeNotificationsDB(notifsDb);
+      await Promise.all([
+        writeOrdersDB(ordersDb),
+        writeNotificationsDB(notifsDb)
+      ]);
     }
 
     return NextResponse.json(

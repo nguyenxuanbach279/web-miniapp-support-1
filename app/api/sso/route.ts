@@ -7,7 +7,14 @@ import { broadcastNewOrder } from '@/lib/realtime';
 export async function GET() {
   try {
     const db = await readSSODB();
-    return NextResponse.json({ success: true, ssoItems: db.ssoItems });
+    return NextResponse.json(
+      { success: true, ssoItems: db.ssoItems },
+      {
+        headers: {
+          'Cache-Control': 'public, max-age=0, s-maxage=30, stale-while-revalidate=120'
+        }
+      }
+    );
   } catch (error) {
     return NextResponse.json({ success: false, message: 'Failed to fetch SSO items' }, { status: 500 });
   }

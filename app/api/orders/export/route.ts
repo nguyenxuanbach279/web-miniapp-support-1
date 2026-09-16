@@ -49,8 +49,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ success: false, message: 'Invalid Basic Auth format' }, { status: 400 });
     }
 
-    // Verify Admin credentials against server database
-    const userDb = await readDB();
+    // Read userDb and ordersDb in parallel to minimize Serverless Function duration
+    const [userDb, db] = await Promise.all([
+      readDB(),
+      readOrdersDB()
+    ]);
+
     const user = userDb.users.find(u => u.email?.toLowerCase() === email);
     const expectedPass = user ? (userDb.passwords[user.email] || userDb.passwords[email]) : null;
 
@@ -62,8 +66,6 @@ export async function GET(request: Request) {
     }
 
     const typeFilter = searchParams.get('type'); // optional: 'sso' | 'phone&role'
-
-    const db = await readOrdersDB();
     let orders = db.orders.filter(o => o.status?.toLowerCase() === 'pending');
 
     if (typeFilter) {

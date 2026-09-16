@@ -1,0 +1,14 @@
+{
+  "functions": {
+    "app/api/**/*.ts": {
+      "memory": 256,
+      "maxDuration": 10
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/cleanup",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
