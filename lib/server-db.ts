@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { Redis } from '@upstash/redis';
 import { createClient } from '@supabase/supabase-js';
-import { User, Role, UserStatus, Order, SSOItem, UserNotification, InstallLinkItem } from './types';
+import { User, Role, UserStatus, Order, SSOItem, UserNotification, InstallLinkItem, PhoneWhitelistItem } from './types';
 
 export interface DBData {
   users: User[];
@@ -25,11 +25,16 @@ export interface InstallLinksDBData {
   installLinks: InstallLinkItem[];
 }
 
+export interface WhitelistDBData {
+  whitelist: PhoneWhitelistItem[];
+}
+
 const DB_PATH = path.join(process.cwd(), 'data', 'users.json');
 const ORDERS_DB_PATH = path.join(process.cwd(), 'data', 'orders.json');
 const SSO_DB_PATH = path.join(process.cwd(), 'data', 'sso.json');
 const NOTIF_DB_PATH = path.join(process.cwd(), 'data', 'notifications.json');
 const INSTALL_LINKS_DB_PATH = path.join(process.cwd(), 'data', 'install_links.json');
+const WHITELIST_DB_PATH = path.join(process.cwd(), 'data', 'phone_whitelist.json');
 
 /**
  * Helper to save local JSON file backup.
@@ -438,6 +443,57 @@ export async function writeInstallLinksDB(data: InstallLinksDBData): Promise<voi
     );
   }
   tasks.push(saveLocalFileBackup(INSTALL_LINKS_DB_PATH, data));
+  await Promise.all(tasks);
+}
+
+// --- WHITELIST DB ---
+const DEFAULT_WHITELIST_DB: WhitelistDBData = {
+  whitelist: []
+};
+
+export async function readWhitelistDB(): Promise<WhitelistDBData> {
+  let db: WhitelistDBData | null = await getSupabaseData<WhitelistDBData>('app_phone_whitelist');
+
+  if (!db && redis) {
+    try {
+      db = await redis.get<WhitelistDBData>('app_phone_whitelist');
+    } catch (err) {
+      console.error('Error reading from Redis (whitelist):', err);
+    }
+  }
+
+  if (!db || !Array.isArray(db.whitelist)) {
+    try {
+      const dataStr = await fs.readFile(WHITELIST_DB_PATH, 'utf-8');
+      db = JSON.parse(dataStr);
+    } catch (error) {
+      db = DEFAULT_WHITELIST_DB;
+    }
+    if (!db || !Array.isArray(db.whitelist)) {
+      db = DEFAULT_WHITELIST_DB;
+    }
+    if (supabase) await setSupabaseData('app_phone_whitelist', db);
+    if (redis) {
+      try { await redis.set('app_phone_whitelist', db); } catch {}
+    }
+  }
+
+  return db;
+}
+
+export async function writeWhitelistDB(data: WhitelistDBData): Promise<void> {
+  const tasks: Promise<unknown>[] = [];
+  if (supabase) {
+    tasks.push(setSupabaseData('app_phone_whitelist', data));
+  }
+  if (redis) {
+    tasks.push(
+      redis.set('app_phone_whitelist', data).catch(err => {
+        console.error('Error writing to Redis (whitelist):', err);
+      })
+    );
+  }
+  tasks.push(saveLocalFileBackup(WHITELIST_DB_PATH, data));
   await Promise.all(tasks);
 }
 

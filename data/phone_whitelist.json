@@ -1,0 +1,25 @@
+{
+  "whitelist": [
+    {
+      "id": "wl_initial_1",
+      "phone": "0972390426",
+      "reason": "Số điện thoại mẫu quản trị",
+      "createdAt": "2026-10-02 10:00",
+      "createdBy": "Admin"
+    },
+    {
+      "id": "wl_initial_2",
+      "phone": "0382285315",
+      "reason": "Số điện thoại mẫu quản trị",
+      "createdAt": "2026-10-02 10:00",
+      "createdBy": "Admin"
+    },
+    {
+      "id": "wl_initial_3",
+      "phone": "0388460740",
+      "reason": "Số điện thoại mẫu quản trị",
+      "createdAt": "2026-10-02 10:00",
+      "createdBy": "Admin"
+    }
+  ]
+}

@@ -76,3 +76,12 @@ export interface InstallLinkItem {
   urlOrVersion: string;
   updatedAt: string;
 }
+
+// Phone Whitelist Item type
+export interface PhoneWhitelistItem {
+  id: string;
+  phone: string;
+  reason: string;
+  createdAt: string;
+  createdBy?: string;
+}

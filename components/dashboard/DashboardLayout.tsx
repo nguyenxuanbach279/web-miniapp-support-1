@@ -7,7 +7,7 @@ import { LanguageSwitcher } from '../LanguageSwitcher';
 import { UserOverview } from './UserOverview';
 import { MemberManagement } from './MemberManagement';
 import { UserApproval } from './UserApproval';
-import { PhoneRolesForm } from './PhoneRolesForm';
+import { PhoneRolesView } from './PhoneRolesView';
 import { OrdersManagement } from './OrdersManagement';
 import { SSORegistry } from './SSORegistry';
 import { SystemSettings } from './SystemSettings';
@@ -544,7 +544,7 @@ export const DashboardLayout: React.FC = () => {
           )}
           {activeTab === 'approval' && (isAdmin ? <UserApproval /> : <UserOverview onNavigateToPhoneRoles={() => setActiveTab('phone-roles')} onNavigateToSSORegistry={() => setActiveTab('sso-registry')} />)}
           {activeTab === 'phone-roles' && (
-            <PhoneRolesForm onNavigateToOrders={() => setActiveTab('orders')} />
+            <PhoneRolesView onNavigateToOrders={() => setActiveTab('orders')} />
           )}
           {activeTab === 'orders' && (
             <OrdersManagement onNavigateToCreate={() => setActiveTab('phone-roles')} />

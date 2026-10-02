@@ -11,9 +11,10 @@ import { Phone, Shield, CheckCircle2, AlertCircle, Send, ShoppingBag, HelpCircle
 
 interface PhoneRolesFormProps {
   onNavigateToOrders?: () => void;
+  hideHeader?: boolean;
 }
 
-export const PhoneRolesForm: React.FC<PhoneRolesFormProps> = ({ onNavigateToOrders }) => {
+export const PhoneRolesForm: React.FC<PhoneRolesFormProps> = ({ onNavigateToOrders, hideHeader }) => {
   const { currentUser } = useAuth();
   const { t } = useLanguage();
   const { showToast } = useToast();
@@ -67,10 +68,14 @@ export const PhoneRolesForm: React.FC<PhoneRolesFormProps> = ({ onNavigateToOrde
           onNavigateToOrders();
         }
       } else {
-        setError(data.message || 'Error creating order');
+        const errorMsg = data.message || 'Error creating order';
+        setError(errorMsg);
+        showToast(errorMsg, 'error');
       }
     } catch (err) {
-      setError('Error connecting to Server');
+      const errorMsg = 'Error connecting to Server';
+      setError(errorMsg);
+      showToast(errorMsg, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -90,37 +95,39 @@ export const PhoneRolesForm: React.FC<PhoneRolesFormProps> = ({ onNavigateToOrde
       />
 
       {/* Title */}
-      <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-3xl space-y-1">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl">
-              <Phone className="w-5 h-5" />
-            </div>
+      {!hideHeader && (
+        <div className="p-6 bg-slate-900/80 border border-slate-800 rounded-3xl space-y-1">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold text-white">{t('phoneRolesTitle')}</h2>
-              <button
-                onClick={() => setShowGuide(true)}
-                className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/30 transition cursor-pointer"
-              >
-                <HelpCircle className="w-3 h-3" />
-                {t('openGuideBtn')}
-              </button>
+              <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl">
+                <Phone className="w-5 h-5" />
+              </div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-white">{t('phoneRolesTitle')}</h2>
+                <button
+                  onClick={() => setShowGuide(true)}
+                  className="flex items-center gap-1 text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 px-2 py-0.5 rounded-full border border-indigo-500/30 transition cursor-pointer"
+                >
+                  <HelpCircle className="w-3 h-3" />
+                  {t('openGuideBtn')}
+                </button>
+              </div>
             </div>
-          </div>
 
-          {onNavigateToOrders && (
-            <button
-              type="button"
-              onClick={onNavigateToOrders}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold rounded-xl border border-slate-700 transition cursor-pointer"
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              {t('ordersTab')}
-            </button>
-          )}
+            {onNavigateToOrders && (
+              <button
+                type="button"
+                onClick={onNavigateToOrders}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-semibold rounded-xl border border-slate-700 transition cursor-pointer"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                {t('ordersTab')}
+              </button>
+            )}
+          </div>
+          <p className="text-xs text-slate-400 pl-10">{t('phoneRolesSub')}</p>
         </div>
-        <p className="text-xs text-slate-400 pl-10">{t('phoneRolesSub')}</p>
-      </div>
+      )}
 
       {/* Form Container */}
       <div className="p-6 sm:p-8 bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl space-y-6">

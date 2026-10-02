@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { readOrdersDB, writeOrdersDB } from '@/lib/server-db';
+import { readOrdersDB, writeOrdersDB, readWhitelistDB } from '@/lib/server-db';
 import { Order, PhoneRole } from '@/lib/types';
-import { extractAllPhoneNumbers } from '@/lib/phone-utils';
+import { extractAllPhoneNumbers, extractPhoneNumbers, normalizeCanonicalPhone } from '@/lib/phone-utils';
 import { getUTC7Timestamp } from '@/lib/date-utils';
 import { broadcastNewOrder } from '@/lib/realtime';
 
@@ -40,8 +40,24 @@ export async function POST(request: Request) {
     if (!detectedPhone) {
       return NextResponse.json({
         success: false,
-        message: 'Could not detect any valid phone numbers from the input text!'
+        message: 'Không tìm thấy số điện thoại hợp lệ nào từ văn bản nhập!'
       }, { status: 400 });
+    }
+
+    // WHITELIST CHECK: Only whitelisted phone numbers are allowed to create Phone & Role orders
+    const detectedList = extractPhoneNumbers(rawText);
+    const whitelistDb = await readWhitelistDB();
+    const whitelistedSet = new Set(whitelistDb.whitelist.map(w => normalizeCanonicalPhone(w.phone)));
+
+    const nonWhitelisted = detectedList.filter(ph => !whitelistedSet.has(normalizeCanonicalPhone(ph)));
+    if (nonWhitelisted.length > 0) {
+      const phoneText = nonWhitelisted.join(', ');
+      return NextResponse.json({
+        success: false,
+        message: nonWhitelisted.length === 1
+          ? `Số điện thoại (${phoneText}) của bạn không nằm trong whitelist, vui lòng liên hệ admin!`
+          : `Các số điện thoại (${phoneText}) của bạn không nằm trong whitelist, vui lòng liên hệ admin!`
+      }, { status: 403 });
     }
 
     const validRole: PhoneRole = ['poc', 'prod', 'full', 'admin', 'default'].includes(phoneRole)
