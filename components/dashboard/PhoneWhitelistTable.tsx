@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { useLanguage } from '@/lib/language-context';
 import { useToast } from '@/lib/toast-context';
 import { PhoneWhitelistItem } from '@/lib/types';
-import { parseMultiplePhoneNumbers } from '@/lib/phone-utils';
+import { parseMultiplePhoneNumbers, normalizeCanonicalPhone, isValidPhoneNumber } from '@/lib/phone-utils';
 import {
   ShieldCheck,
   Search,
@@ -21,7 +21,11 @@ import {
   AlertTriangle,
   RefreshCw,
   Hash,
-  Sparkles
+  Sparkles,
+  Download,
+  Upload,
+  FileUp,
+  Layers
 } from 'lucide-react';
 
 interface PhoneWhitelistTableProps {
@@ -56,6 +60,19 @@ export const PhoneWhitelistTable: React.FC<PhoneWhitelistTableProps> = ({ onWhit
 
   // Copied indicator state
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Import Modal State
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importTab, setImportTab] = useState<'file' | 'paste'>('file');
+  const [importFileName, setImportFileName] = useState('');
+  const [importRawText, setImportRawText] = useState('');
+  const [importMode, setImportMode] = useState<'upsert' | 'replace'>('upsert');
+  const [importParsedItems, setImportParsedItems] = useState<{ phone: string; reason: string; createdAt: string }[]>([]);
+  const [importInvalidCount, setImportInvalidCount] = useState(0);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [submittingImport, setSubmittingImport] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
 
@@ -95,6 +112,221 @@ export const PhoneWhitelistTable: React.FC<PhoneWhitelistTableProps> = ({ onWhit
     navigator.clipboard.writeText(phone);
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1800);
+  };
+
+  const parseImportJson = (text: string) => {
+    if (!text.trim()) {
+      return { items: [], invalidCount: 0, error: null };
+    }
+
+    try {
+      const parsed = JSON.parse(text);
+      let rawList: any[] = [];
+      if (Array.isArray(parsed)) {
+        rawList = parsed;
+      } else if (parsed && typeof parsed === 'object') {
+        if (Array.isArray(parsed.whitelist)) {
+          rawList = parsed.whitelist;
+        } else if (Array.isArray(parsed.items)) {
+          rawList = parsed.items;
+        } else if (Array.isArray(parsed.data)) {
+          rawList = parsed.data;
+        } else {
+          return {
+            items: [],
+            invalidCount: 0,
+            error: 'Định dạng JSON không hợp lệ! Vui lòng cung cấp mảng dữ liệu.'
+          };
+        }
+      } else {
+        return { items: [], invalidCount: 0, error: 'Định dạng JSON không hợp lệ!' };
+      }
+
+      let invalidCount = 0;
+      const validItems: { phone: string; reason: string; createdAt: string }[] = [];
+
+      for (const raw of rawList) {
+        if (!raw || typeof raw !== 'object') {
+          invalidCount++;
+          continue;
+        }
+
+        const rawPhone =
+          raw.phone ??
+          raw.phoneNumber ??
+          raw.soDienThoai ??
+          raw.so_dien_thoai ??
+          raw['Số điện thoại'] ??
+          '';
+
+        const canonical = normalizeCanonicalPhone(String(rawPhone));
+        if (!canonical || !isValidPhoneNumber(canonical)) {
+          invalidCount++;
+          continue;
+        }
+
+        const rawReason =
+          raw.reason ??
+          raw.lyDo ??
+          raw.ly_do ??
+          raw['Reason'] ??
+          raw['Lý do'] ??
+          '';
+
+        const cleanReason = String(rawReason).trim() || 'Imported';
+
+        const rawCreatedAt =
+          raw.createdAt ??
+          raw.created_at ??
+          raw.ngayTao ??
+          raw.ngay_tao ??
+          raw['Ngày tạo'] ??
+          '';
+
+        validItems.push({
+          phone: canonical,
+          reason: cleanReason,
+          createdAt: String(rawCreatedAt || '').trim()
+        });
+      }
+
+      // Deduplicate within the file itself
+      const dedupedMap = new Map<string, { phone: string; reason: string; createdAt: string }>();
+      for (const item of validItems) {
+        dedupedMap.set(item.phone, item);
+      }
+
+      const items = Array.from(dedupedMap.values());
+
+      return {
+        items,
+        invalidCount,
+        error: items.length === 0 ? 'Không tìm thấy số điện thoại hợp lệ nào trong file JSON!' : null
+      };
+    } catch (err: any) {
+      return {
+        items: [],
+        invalidCount: 0,
+        error: 'Lỗi phân tích cú pháp JSON: ' + (err.message || 'Cú pháp không đúng')
+      };
+    }
+  };
+
+  const processJsonText = (text: string) => {
+    setImportRawText(text);
+    setImportError(null);
+    if (!text.trim()) {
+      setImportParsedItems([]);
+      setImportInvalidCount(0);
+      return;
+    }
+    const result = parseImportJson(text);
+    setImportParsedItems(result.items);
+    setImportInvalidCount(result.invalidCount);
+    setImportError(result.error);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || '';
+      processJsonText(text);
+    };
+    reader.onerror = () => {
+      setImportError('Lỗi đọc file!');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (!file) return;
+
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || '';
+      processJsonText(text);
+    };
+    reader.onerror = () => {
+      setImportError('Lỗi đọc file!');
+    };
+    reader.readAsText(file);
+  };
+
+  const handleExportJSON = () => {
+    const targetItems = searchQuery.trim() ? filteredWhitelist : whitelist;
+    if (targetItems.length === 0) {
+      showToast('Không có dữ liệu whitelist nào để xuất!', 'info');
+      return;
+    }
+
+    // Export with required fields: phone, reason, createdAt
+    const exportData = targetItems.map(item => ({
+      phone: item.phone,
+      reason: item.reason,
+      createdAt: item.createdAt
+    }));
+
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+    a.download = `whitelist_export_${dateStr}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast('toastWhitelistExportSuccess', 'success');
+  };
+
+  const handleConfirmImport = async () => {
+    if (importParsedItems.length === 0) {
+      setImportError('Vui lòng chọn hoặc dán file JSON có chứa số điện thoại hợp lệ!');
+      return;
+    }
+
+    setSubmittingImport(true);
+    setImportError(null);
+
+    try {
+      const res = await fetch('/api/whitelist/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: importParsedItems,
+          mode: importMode,
+          importedBy: currentUser?.name || currentUser?.email || 'Admin'
+        })
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || t('toastWhitelistImportSuccess'), 'success');
+        setIsImportModalOpen(false);
+        setImportRawText('');
+        setImportFileName('');
+        setImportParsedItems([]);
+        setImportInvalidCount(0);
+        fetchWhitelist(true);
+      } else {
+        setImportError(data.message || 'Lỗi khi import dữ liệu whitelist');
+      }
+    } catch (err) {
+      setImportError('Lỗi kết nối tới máy chủ khi import');
+    } finally {
+      setSubmittingImport(false);
+    }
   };
 
   const handleAddWhitelist = async (e: React.FormEvent) => {
@@ -238,7 +470,7 @@ export const PhoneWhitelistTable: React.FC<PhoneWhitelistTableProps> = ({ onWhit
           </p>
         </div>
 
-        <div className="flex items-center gap-2 pl-10 md:pl-0">
+        <div className="flex flex-wrap items-center gap-2 pl-10 md:pl-0">
           <button
             onClick={() => fetchWhitelist(true)}
             disabled={refreshing}
@@ -246,6 +478,29 @@ export const PhoneWhitelistTable: React.FC<PhoneWhitelistTableProps> = ({ onWhit
             title="Làm mới"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-emerald-400' : ''}`} />
+          </button>
+          <button
+            onClick={handleExportJSON}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:border-slate-600 text-xs font-semibold rounded-xl shadow-xs transition cursor-pointer"
+            title="Xuất dữ liệu whitelist ra file JSON (số điện thoại, reason, ngày tạo)"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-400" />
+            <span>{t('whitelistExportBtn')}</span>
+          </button>
+          <button
+            onClick={() => {
+              setImportError(null);
+              setImportRawText('');
+              setImportFileName('');
+              setImportParsedItems([]);
+              setImportInvalidCount(0);
+              setIsImportModalOpen(true);
+            }}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700/80 hover:border-slate-600 text-xs font-semibold rounded-xl shadow-xs transition cursor-pointer"
+            title="Import dữ liệu whitelist từ file JSON hoặc chuỗi JSON"
+          >
+            <Upload className="w-3.5 h-3.5 text-emerald-400" />
+            <span>{t('whitelistImportBtn')}</span>
           </button>
           <button
             onClick={() => {
@@ -605,6 +860,245 @@ export const PhoneWhitelistTable: React.FC<PhoneWhitelistTableProps> = ({ onWhit
                 className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-rose-600/30 transition disabled:opacity-50 cursor-pointer"
               >
                 {submittingDelete ? 'Đang xóa...' : t('whitelistDeleteBtn')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* --- IMPORT MODAL --- */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl p-6 space-y-4 my-auto animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">{t('whitelistImportModalTitle')}</h3>
+                  <p className="text-[11px] text-slate-400">{t('whitelistImportModalSub')}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Error Banner */}
+            {importError && (
+              <div className="p-3 bg-rose-950/50 border border-rose-900/60 rounded-xl text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{importError}</span>
+              </div>
+            )}
+
+            {/* Tab Switcher: Upload File / Paste Text */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-950/80 border border-slate-800 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setImportTab('file')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                  importTab === 'file'
+                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <FileUp className="w-3.5 h-3.5" />
+                {t('whitelistImportFileTab')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportTab('paste')}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-semibold transition cursor-pointer ${
+                  importTab === 'paste'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {t('whitelistImportPasteTab')}
+              </button>
+            </div>
+
+            {/* Tab 1: Upload File */}
+            {importTab === 'file' && (
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleFileDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-6 text-center transition cursor-pointer ${
+                    isDragging
+                      ? 'border-emerald-500 bg-emerald-500/10'
+                      : 'border-slate-700 hover:border-slate-600 bg-slate-950/50 hover:bg-slate-950/80'
+                  }`}
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="p-3 bg-slate-800 text-emerald-400 rounded-2xl">
+                      <Upload className="w-6 h-6" />
+                    </div>
+                    <div className="text-xs font-semibold text-slate-200">
+                      {importFileName ? (
+                        <span className="text-emerald-400 flex items-center gap-1.5 font-mono">
+                          <Check className="w-4 h-4" />
+                          {importFileName}
+                        </span>
+                      ) : (
+                        t('whitelistImportFilePlaceholder')
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Định dạng chuẩn: File .json chứa số điện thoại, reason, ngày tạo
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Tab 2: Paste JSON Text */}
+            {importTab === 'paste' && (
+              <div className="space-y-1.5">
+                <textarea
+                  rows={6}
+                  value={importRawText}
+                  onChange={(e) => processJsonText(e.target.value)}
+                  placeholder={t('whitelistImportPastePlaceholder')}
+                  className="w-full p-3 bg-slate-800/90 border border-slate-700 rounded-xl text-xs font-mono text-white placeholder-slate-500 focus:outline-hidden focus:border-indigo-500 transition leading-relaxed"
+                />
+              </div>
+            )}
+
+            {/* Import Mode Selection */}
+            <div className="space-y-2 p-3 bg-slate-950/60 border border-slate-800 rounded-2xl">
+              <label className="block text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-indigo-400" />
+                {t('whitelistImportModeLabel')}
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition cursor-pointer ${
+                  importMode === 'upsert'
+                    ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                    : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-700'
+                }`}>
+                  <input
+                    type="radio"
+                    name="importMode"
+                    value="upsert"
+                    checked={importMode === 'upsert'}
+                    onChange={() => setImportMode('upsert')}
+                    className="mt-0.5 text-emerald-500 focus:ring-0"
+                  />
+                  <div>
+                    <div className="font-semibold text-white text-xs">{t('whitelistImportModeUpsert')}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Giữ nguyên số hiện có, cập nhật ngày tạo & lý do nếu trùng</div>
+                  </div>
+                </label>
+
+                <label className={`flex items-start gap-2.5 p-2.5 rounded-xl border transition cursor-pointer ${
+                  importMode === 'replace'
+                    ? 'border-rose-500/50 bg-rose-500/10 text-rose-200'
+                    : 'border-slate-800 bg-slate-900/50 text-slate-400 hover:border-slate-700'
+                }`}>
+                  <input
+                    type="radio"
+                    name="importMode"
+                    value="replace"
+                    checked={importMode === 'replace'}
+                    onChange={() => setImportMode('replace')}
+                    className="mt-0.5 text-rose-500 focus:ring-0"
+                  />
+                  <div>
+                    <div className="font-semibold text-white text-xs">{t('whitelistImportModeReplace')}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Xóa sạch toàn bộ whitelist cũ và nạp mới hoàn toàn</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            {/* Live Preview Section */}
+            {importParsedItems.length > 0 && (
+              <div className="space-y-2 p-3 bg-slate-950/70 border border-slate-800 rounded-2xl text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                    {t('whitelistImportPreviewTitle')}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-bold rounded-lg">
+                      {t('whitelistImportDetectedCount')} {importParsedItems.length}
+                    </span>
+                    {importInvalidCount > 0 && (
+                      <span className="px-2 py-0.5 bg-rose-500/15 border border-rose-500/30 text-rose-300 font-bold rounded-lg">
+                        {t('whitelistImportInvalidCount')} {importInvalidCount}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Mini Preview Table */}
+                <div className="max-h-36 overflow-y-auto rounded-xl border border-slate-800/80">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-slate-900 text-slate-400 sticky top-0">
+                      <tr>
+                        <th className="py-1.5 px-3">SĐT</th>
+                        <th className="py-1.5 px-3">Reason</th>
+                        <th className="py-1.5 px-3">Ngày tạo</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/50">
+                      {importParsedItems.slice(0, 5).map((item, idx) => (
+                        <tr key={idx} className="hover:bg-slate-800/30">
+                          <td className="py-1.5 px-3 font-mono font-semibold text-emerald-400">{item.phone}</td>
+                          <td className="py-1.5 px-3 text-slate-300 truncate max-w-[150px]">{item.reason}</td>
+                          <td className="py-1.5 px-3 text-slate-400 whitespace-nowrap">{item.createdAt || 'Mới'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {importParsedItems.length > 5 && (
+                    <div className="py-1 px-3 text-center text-slate-500 bg-slate-900/60 text-[10px]">
+                      ... và {importParsedItems.length - 5} số khác
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setIsImportModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-700 text-xs font-semibold text-slate-300 hover:bg-slate-800 transition cursor-pointer"
+              >
+                {t('whitelistCancelBtn')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmImport}
+                disabled={submittingImport || importParsedItems.length === 0}
+                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {submittingImport ? (
+                  t('whitelistImportingBtn')
+                ) : (
+                  <>
+                    <Upload className="w-3.5 h-3.5" />
+                    {t('whitelistImportConfirmBtn')} ({importParsedItems.length})
+                  </>
+                )}
               </button>
             </div>
           </div>
